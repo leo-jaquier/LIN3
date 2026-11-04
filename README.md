@@ -20,32 +20,57 @@ This architecture provides a centralized time synchronization service while main
 The following diagram illustrates the NTP synchronization hierarchy and the configured fallback paths.
 
 ```mermaid
+
 flowchart TB
-    SRC["External NTP Source"]
+    ADMIN["fa:fa-user ADMIN-SYS"]
+    INTERNET["fa:fa-globe INTERNET GATEWAY"]
 
-    subgraph INFRA["NTP Infrastructure"]
-        DC["LIN3-DC<br/>Debian 13<br/>Primary NTP Server"]
+    ADMIN --> INTERNET
 
-        WIN["LIN3-WIN<br/>Windows Server 2025<br/>NTP Client"]
-        LIN["LIN3-LIN<br/>Ubuntu 26.04 LTS<br/>NTP Client"]
+    subgraph VPC["VPC LN3"]
+        direction TB
 
-        DC -->|"Primary NTP"| WIN
-        DC -->|"Primary NTP"| LIN
+        subgraph PUBLIC["SUBNET PUBLIC"]
+            direction LR
+            SSH["fa:fa-shield SSH-SRV<br/>Bastion Host"]
+            NAT["fa:fa-network-wired NAT-SRV"]
+        end
 
-        WIN -.->|"Fallback NTP"| SRC
-        LIN -.->|"Fallback NTP"| WIN
+        subgraph PRIVATE["SUBNET PRIVATE"]
+            direction LR
+            NTP["fa:fa-server NTP-SRV-LIN<br/>Debian 13"]
+            LIN["fa:fa-server NTP-CLI-LIN<br/>Ubuntu 26.04 LTS"]
+            WIN["fa:fa-desktop NTP-CLI-WIN<br/>Windows Server 2025"]
+        end
     end
 
-    SRC -->|"Upstream NTP"| DC
+    INTERNET -->|"TCP 22"| SSH
 
-    classDef source fill:#e1f0ff,stroke:#2878b5,color:#123
-    classDef primary fill:#d9ead3,stroke:#38761d,color:#123
-    classDef client fill:#fff2cc,stroke:#bf9000,color:#123
+    SSH -->|"TCP 22"| NTP
+    SSH -->|"TCP 22"| LIN
+    SSH -->|"TCP 3389"| WIN
 
-    class SRC source
-    class DC primary
-    class WIN,LIN client
-``` 
+    NTP -->|"UDP 123"| LIN
+    NTP -->|"UDP 123"| WIN
+
+    NTP -->|"Outbound traffic"| NAT
+    LIN -->|"Outbound traffic"| NAT
+    WIN -->|"Outbound traffic"| NAT
+
+    NAT -->|"Outbound traffic"| INTERNET
+
+    classDef admin fill:#64748b,color:#fff,stroke:#475569
+    classDef gateway fill:#1d4ed8,color:#fff,stroke:#1e40af
+    classDef public fill:#dbeafe,color:#1e3a8a,stroke:#2563eb
+    classDef linux fill:#dcfce7,color:#14532d,stroke:#16a34a
+    classDef windows fill:#dbeafe,color:#1e40af,stroke:#2563eb
+
+    class ADMIN admin
+    class INTERNET gateway
+    class SSH,NAT public
+    class NTP,LIN linux
+    class WIN windows
+```
 
 ## Getting Started
 
