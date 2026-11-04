@@ -38,14 +38,16 @@ command to run if program contains helper info
 Contributors names and contact info
 
 
-Leo-jaquier  
+Leo-jaquier
 [@Leo-jaquier](https://github.com/leo-jaquier)
 
 PS45HVT
-[PS45HVT](https://github.com/PS45HVT)
+[@PS45HVT](https://github.com/PS45HVT)
 
 SvenRaval
-[SvenRaval](https://github.com/SvenRaval)
+[@SvenRaval](https://github.com/SvenRaval)
+
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE.md file for details
