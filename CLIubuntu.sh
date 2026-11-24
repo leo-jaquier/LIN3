@@ -9,6 +9,10 @@ SRC_DIR="/etc/chrony/sources.d"
 CONF_DIR="/etc/chrony/conf.d"
 SRC_FILE="$SRC_DIR/local-ntp.sources"
 
+# Poll interval as log2(seconds): 2 = 4 s
+MINPOLL=2
+MAXPOLL=2
+
 if [[ $EUID -ne 0 ]]; then
     echo "Run as root (sudo $0)" >&2
     exit 1
@@ -32,15 +36,24 @@ disable_sources() {
 }
 disable_sources "$CONF"
 for f in "$SRC_DIR"/*.sources "$CONF_DIR"/*.conf; do
-    [[ -e "$f" && "$f" != "$SRC_FILE" ]] && disable_sources "$f"
+    if [[ -e "$f" && "$f" != "$SRC_FILE" ]]; then
+        disable_sources "$f"
+    fi
 done
 
 # Only read our own sources directory
 grep -q "^sourcedir $SRC_DIR" "$CONF" || echo "sourcedir $SRC_DIR" >> "$CONF"
 
+# Allow chrony to step the clock at any time if offset > 1 s (default only steps at startup)
+if grep -q "^makestep" "$CONF"; then
+    sed -i -E 's/^makestep.*/makestep 1 -1/' "$CONF"
+else
+    echo "makestep 1 -1" >> "$CONF"
+fi
+
 cat > "$SRC_FILE" <<EOF
-server ${NTP_PRIMARY}  iburst prefer minpoll 4 maxpoll 6
-server ${NTP_FALLBACK} iburst minpoll 4 maxpoll 6
+server ${NTP_PRIMARY}  iburst prefer minpoll ${MINPOLL} maxpoll ${MAXPOLL}
+server ${NTP_FALLBACK} iburst minpoll ${MINPOLL} maxpoll ${MAXPOLL}
 EOF
 
 echo "==> Restarting chrony"
@@ -53,5 +66,7 @@ sleep 3
 chronyc makestep
 
 echo "==> Status"
+grep -E "^(makestep|sourcedir)" "$CONF"
+cat "$SRC_FILE"
 chronyc sources -v
 chronyc tracking
