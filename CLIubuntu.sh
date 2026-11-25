@@ -37,9 +37,7 @@ cat > "$CONF" <<EOF
 server ${NTP_PRIMARY}  iburst prefer minpoll ${MINPOLL} maxpoll ${MAXPOLL}
 server ${NTP_FALLBACK} iburst minpoll ${MINPOLL} maxpoll ${MAXPOLL}
 
-keyfile /etc/chrony/chrony.keys
 driftfile /var/lib/chrony/chrony.drift
-ntsdumpdir /var/lib/chrony
 
 logdir ${LOG_DIR}
 log tracking measurements statistics
