@@ -70,8 +70,8 @@ systemctl restart chrony
 systemctl enable chrony
 sleep 5
 systemctl --no-pager status chrony || true
-echo "==> En attente de la synchronisation (5 min)"
-sleep 300
+echo "==> En attente de la synchronisation (5 min) (Changé à 30s pour la validation)"
+sleep 30
 
 echo "==> [7/7] Vérifications"
 echo "--- Sources ---"
