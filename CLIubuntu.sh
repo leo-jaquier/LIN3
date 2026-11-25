@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
-# Update Ubuntu, set timezone to Europe/Zurich, point chrony at internal NTP servers only.
 set -euo pipefail
 
 NTP_PRIMARY="10.0.1.10"
 NTP_FALLBACK="10.0.1.11"
-CONF="/etc/chrony/chrony.conf"
-SRC_DIR="/etc/chrony/sources.d"
-CONF_DIR="/etc/chrony/conf.d"
-SRC_FILE="$SRC_DIR/local-ntp.sources"
-
-# Poll interval as log2(seconds): 2 = 4 s
 MINPOLL=2
 MAXPOLL=2
+CONF="/etc/chrony/chrony.conf"
+LOG_DIR="/var/log/chrony"
+ERR_LOG="/var/log/chrony-errors.log"
+RSYSLOG_RULE="/etc/rsyslog.d/30-chrony-errors.conf"
+LOGROTATE_RULE="/etc/logrotate.d/chrony-errors"
+BACKUP="/var/backups/chrony-etc-$(date +%Y%m%d-%H%M%S).tar.gz"
 
 if [[ $EUID -ne 0 ]]; then
     echo "Run as root (sudo $0)" >&2
@@ -22,39 +21,58 @@ echo "==> Updating system"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get -y upgrade
+apt-get -y install chrony rsyslog
 
 echo "==> Setting timezone"
 timedatectl set-timezone Europe/Zurich
 
-echo "==> Configuring chrony"
-mkdir -p "$SRC_DIR"
-cp -a "$CONF" "$CONF.bak.$(date +%Y%m%d%H%M%S)"
+echo "==> Backing up /etc/chrony to $BACKUP"
+tar czf "$BACKUP" -C /etc chrony
 
-# Disable every other time source: pools, servers, and extra sourcedirs (DHCP/cloud-provided NTP)
-disable_sources() {
-    sed -i -E 's/^(pool|server|peer|sourcedir)[[:space:]]/#&/' "$1"
-}
-disable_sources "$CONF"
-for f in "$SRC_DIR"/*.sources "$CONF_DIR"/*.conf; do
-    if [[ -e "$f" && "$f" != "$SRC_FILE" ]]; then
-        disable_sources "$f"
-    fi
-done
+echo "==> Removing old sources, snippets and backups"
+rm -f /etc/chrony/conf.d/*.conf /etc/chrony/sources.d/*.sources /etc/chrony/*.bak.*
 
-# Only read our own sources directory
-grep -q "^sourcedir $SRC_DIR" "$CONF" || echo "sourcedir $SRC_DIR" >> "$CONF"
-
-# Allow chrony to step the clock at any time if offset > 1 s (default only steps at startup)
-if grep -q "^makestep" "$CONF"; then
-    sed -i -E 's/^makestep.*/makestep 1 -1/' "$CONF"
-else
-    echo "makestep 1 -1" >> "$CONF"
-fi
-
-cat > "$SRC_FILE" <<EOF
+echo "==> Writing clean $CONF"
+cat > "$CONF" <<EOF
 server ${NTP_PRIMARY}  iburst prefer minpoll ${MINPOLL} maxpoll ${MAXPOLL}
 server ${NTP_FALLBACK} iburst minpoll ${MINPOLL} maxpoll ${MAXPOLL}
+
+keyfile /etc/chrony/chrony.keys
+driftfile /var/lib/chrony/chrony.drift
+ntsdumpdir /var/lib/chrony
+
+logdir ${LOG_DIR}
+log tracking measurements statistics
+logchange 0.5
+
+maxupdateskew 100.0
+rtcsync
+makestep 1 -1
+leapsectz right/UTC
 EOF
+
+mkdir -p "$LOG_DIR"
+
+echo "==> Setting up filtered error log $ERR_LOG"
+cat > "$RSYSLOG_RULE" <<EOF
+if \$programname == 'chronyd' and \$syslogseverity <= 4 then ${ERR_LOG}
+EOF
+
+cat > "$LOGROTATE_RULE" <<EOF
+${ERR_LOG} {
+    weekly
+    rotate 4
+    compress
+    missingok
+    notifempty
+    postrotate
+        /usr/lib/rsyslog/rsyslog-rotate
+    endscript
+}
+EOF
+
+systemctl enable rsyslog
+systemctl restart rsyslog
 
 echo "==> Restarting chrony"
 systemctl enable chrony
@@ -66,7 +84,9 @@ sleep 3
 chronyc makestep
 
 echo "==> Status"
-grep -E "^(makestep|sourcedir)" "$CONF"
-cat "$SRC_FILE"
+cat "$CONF"
+ls -l /etc/chrony /etc/chrony/conf.d /etc/chrony/sources.d
 chronyc sources -v
 chronyc tracking
+ls -l "$LOG_DIR"
+ls -l "$ERR_LOG" 2>/dev/null || echo "$ERR_LOG not created yet (no warnings so far)"
