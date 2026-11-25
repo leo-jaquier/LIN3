@@ -8,9 +8,9 @@
 # =============================================================================
 set -euo pipefail
 
-ALLOW_NET="${1:-10.229.32.0/20}"
+ALLOW_NET="${1:-10.0.1.0/24}"
 TIMEZONE="Europe/Zurich"
-NTP_POOL="ntp.metas.ch"
+NTP_POOL="pool.ntp.org"
 CONF="/etc/chrony/chrony.conf"
 BACKUP_DIR="/var/backups"
 
@@ -78,8 +78,8 @@ systemctl restart chrony
 systemctl enable chrony
 sleep 5
 systemctl --no-pager status chrony || true
-echo "==> EN ATTENTE POUR LA SYNCRHONISATIO (5 min)"
-sleep 300
+echo "==> EN ATTENTE POUR LA SYNCRHONISATION (5 min) (changer à 30s pour la validation)"
+sleep 30
 
 echo "==> [7/7] Vérifications"
 echo "--- Sources ---"
