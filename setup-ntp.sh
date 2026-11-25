@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Installation automatique d'un serveur NTP (Chrony) sur Debian 13
-# - Sources : pool ntp.metas.ch (Suisse, stratum 1) -> notre stratum = 2
+# - Sources : 0..3.ie.pool.ntp.org (déclarées comme "server", pas "pool")
 # - Pas d'iburst, accès restreint au sous-réseau, logs activés
 # Usage : sudo ./setup-ntp.sh [SOUS_RESEAU_CIDR]
-# Exemple : sudo ./setup-ntp.sh 10.229.32.0/20
+# Exemple : sudo ./setup-ntp.sh 10.0.1.0/24
 # =============================================================================
 set -euo pipefail
 
-ALLOW_NET="${1:-10.0.1.0/24}"
+ALLOW_NET="${1:-10.0.1.0/28}"
 TIMEZONE="Europe/Zurich"
-NTP_POOL="pool.ntp.org"
 CONF="/etc/chrony/chrony.conf"
 BACKUP_DIR="/var/backups"
 
@@ -35,35 +34,28 @@ if systemctl list-unit-files | grep -q '^systemd-timesyncd'; then
 fi
 
 echo "==> [4/7] Sauvegarde et écriture de la configuration"
+# Le DNS est nécessaire pour résoudre les serveurs NTP
+if ! getent hosts 0.ie.pool.ntp.org >/dev/null; then
+    echo "ATTENTION : 0.ie.pool.ntp.org n'est pas résolu, vérifier le DNS (/etc/resolv.conf)" >&2
+fi
+
 # Sauvegarde HORS de /etc/chrony pour ne pas laisser de trace dans la conf
 if [[ -f "${CONF}" ]]; then
     cp "${CONF}" "${BACKUP_DIR}/chrony.conf.orig-$(date +%Y%m%d-%H%M%S)"
 fi
 
+# Configuration minimale : uniquement les directives nécessaires, sans commentaires
 cat > "${CONF}" <<EOF
-# Time source: pool ${NTP_POOL} (Swiss Federal Institute of Metrology).
-# Un pool permet de basculer automatiquement sur un autre serveur en cas de panne.
-pool ${NTP_POOL} maxsources 3
-
-# Sources additionnelles éventuelles
-sourcedir /etc/chrony/sources.d
-
-# Clients autorisés (restriction par sous-réseau)
+server 0.ie.pool.ntp.org
+server 1.ie.pool.ntp.org
+server 2.ie.pool.ntp.org
+server 3.ie.pool.ntp.org
 allow ${ALLOW_NET}
-
-keyfile /etc/chrony/chrony.keys
 driftfile /var/lib/chrony/chrony.drift
-ntsdumpdir /var/lib/chrony
-
-# Logs
+makestep 1 3
+rtcsync
 logdir /var/log/chrony
 log tracking measurements statistics
-
-maxupdateskew 100.0
-rtcsync
-makestep 1 3
-leapseclist /usr/share/zoneinfo/leap-seconds.list
-confdir /etc/chrony/conf.d
 EOF
 
 echo "==> [5/7] Pare-feu : ouverture UDP 123 pour ${ALLOW_NET} (si ufw actif)"
@@ -78,8 +70,8 @@ systemctl restart chrony
 systemctl enable chrony
 sleep 5
 systemctl --no-pager status chrony || true
-echo "==> EN ATTENTE POUR LA SYNCRHONISATION (5 min) (changer à 30s pour la validation)"
-sleep 30
+echo "==> En attente de la synchronisation (5 min)"
+sleep 300
 
 echo "==> [7/7] Vérifications"
 echo "--- Sources ---"
